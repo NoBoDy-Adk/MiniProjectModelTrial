@@ -35,24 +35,46 @@ def generate_fraudulent(num_samples=50):
         labels.append(0)  # fraudulent
     return data, labels
 
+# Function to extract statistical features (mean and std per feature)
+def extract_stat_features(seq):
+    seq_reshaped = seq.reshape(SEQUENCE_LENGTH, NUM_FEATURES)
+    means = np.mean(seq_reshaped, axis=0)
+    stds = np.std(seq_reshaped, axis=0)
+    return np.concatenate([means, stds])
+
 # Generate data
 legit_data, legit_labels = generate_legitimate(100)
 fraud_data, fraud_labels = generate_fraudulent(100)
 
-X = np.array(legit_data + fraud_data)
+# Data for SVM1 (sequence) - already flattened
+X_seq = np.array(legit_data + fraud_data)
 y = np.array(legit_labels + fraud_labels)
 
-# Split data
-X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+# Data for SVM2 (statistics)
+legit_stat_data = [extract_stat_features(np.array(seq)) for seq in legit_data]
+fraud_stat_data = [extract_stat_features(np.array(seq)) for seq in fraud_data]
 
-# Train SVM with probability
-clf = svm.SVC(kernel='rbf', probability=True, random_state=42)
-clf.fit(X_train, y_train)
+X_stat = np.array(legit_stat_data + fraud_stat_data)
+
+# Split data for both
+X_seq_train, X_seq_test, y_train, y_test = train_test_split(X_seq, y, test_size=0.2, random_state=42)
+X_stat_train, X_stat_test, _, _ = train_test_split(X_stat, y, test_size=0.2, random_state=42)
+
+# Train SVM1 (sequence)
+clf_seq = svm.SVC(kernel='rbf', probability=True, random_state=42)
+clf_seq.fit(X_seq_train, y_train)
+
+# Train SVM2 (statistics)
+clf_stat = svm.SVC(kernel='linear', probability=True, random_state=42)
+clf_stat.fit(X_stat_train, y_train)
 
 # Evaluate
-y_pred = clf.predict(X_test)
-print(f"Accuracy: {accuracy_score(y_test, y_pred)}")
+y_pred_seq = clf_seq.predict(X_seq_test)
+y_pred_stat = clf_stat.predict(X_stat_test)
+print(f"SVM1 (Sequence) Accuracy: {accuracy_score(y_test, y_pred_seq)}")
+print(f"SVM2 (Statistics) Accuracy: {accuracy_score(y_test, y_pred_stat)}")
 
-# Save model
-joblib.dump(clf, "svm_behavior_model.pkl")
-print("Model saved as svm_behavior_model.pkl")
+# Save models
+joblib.dump(clf_seq, "../svm_seq_model.pkl")
+joblib.dump(clf_stat, "../svm_stat_model.pkl")
+print("Models saved as svm_seq_model.pkl and svm_stat_model.pkl")

@@ -46,15 +46,25 @@ export default function TransferMpin() {
           touchPressure: event.Pressure,
           duration: event.Duration,
         }));
-        const riskResponse = await apiFetch<{ score: number; risk: string }>("/predict", {
+        const riskResponse = await apiFetch<{ svm1_score: number; svm2_score: number; lstm_score: number; risk: string }>("/predict", {
           method: "POST",
           body: JSON.stringify({ session: sessionData }),
         });
-        if (riskResponse.score < 0.40) {
-          Alert.alert("Security Alert", "Suspicious activity detected. Confidence score too low.");
+
+        if (riskResponse.lstm_score < 0.40) {
+          Alert.alert("Security Alert", "High risk detected. Transaction blocked for security.");
           setIsSubmitting(false);
           return;
+        } else if (riskResponse.svm1_score < 0.40 && riskResponse.svm2_score < 0.40) {
+          Alert.alert("Security Check", "Unusual activity detected. Please re-enter your MPIN for verification.");
+          setMpin("");
+          setIsSubmitting(false);
+          return;
+        } else if (riskResponse.svm1_score < 0.40) {
+          Alert.alert("Notice", "Unusual activity detected. Proceeding with caution.");
+          // Continue to transfer
         }
+        // Else proceed normally
       }
 
       const session = await getSession();

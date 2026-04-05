@@ -16,20 +16,25 @@ router.post("/", async (req, res) => {
 
   fs.writeFileSync(path, header + rows.join("\n"));
 
-  // Run predict_svm.py
-  const py = spawn("python", ["ml/predict_svm.py"]);
+  // Run predict_multi.py
+  const py = spawn("python", ["ml/predict_multi.py"]);
   let output = "";
 
   py.stdout.on("data", (data) => (output += data.toString()));
   py.stderr.on("data", (err) => console.error("❌", err.toString()));
 
   py.on("close", (code) => {
-    const score = parseFloat(output.trim());
-    let risk = "low";
-    if (score < 0.4) risk = "high";
-    else if (score < 0.65) risk = "medium";
+    const [svm1Str, svm2Str, lstmStr] = output.trim().split(',');
+    const svm1_score = parseFloat(svm1Str);
+    const svm2_score = parseFloat(svm2Str);
+    const lstm_score = parseFloat(lstmStr);
 
-    return res.json({ score, risk });
+    let risk = "low";
+    if (lstm_score < 0.4) risk = "high";
+    else if (svm1_score < 0.4 && svm2_score < 0.4) risk = "medium";
+    else if (svm1_score < 0.4) risk = "low-medium";
+
+    return res.json({ svm1_score, svm2_score, lstm_score, risk });
   });
 });
 
