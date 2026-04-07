@@ -3,6 +3,7 @@ import { apiFetch } from "../utils/api";
 import {
   getContinuousModelEvents,
   getContinuousModelTotalSamples,
+  initializeContinuousModelBuffer,
   subscribeToContinuousModelBuffer,
 } from "../utils/continuousModelBuffer";
 import {
@@ -21,7 +22,6 @@ interface ModelConfidenceResponse {
 
 const MIN_SAMPLES = 12;
 const POLL_INTERVAL_MS = 1000;
-const MAX_MODEL_PAYLOAD = 200;
 const SAMPLE_STEP_TRIGGER = 10;
 const TIME_TRIGGER_MS = 10000;
 
@@ -45,6 +45,10 @@ export default function useContinuousModelScoring() {
   }, [events.length]);
 
   useEffect(() => {
+    void initializeContinuousModelBuffer();
+  }, []);
+
+  useEffect(() => {
     const intervalId = setInterval(() => {
       const currentEvents = eventsRef.current;
       const totalSamples = getContinuousModelTotalSamples();
@@ -66,11 +70,9 @@ export default function useContinuousModelScoring() {
 
       requestInFlightRef.current = true;
       markModelConfidenceChecking();
-      const sessionForModel = currentEvents.slice(-MAX_MODEL_PAYLOAD);
-
       void apiFetch<ModelConfidenceResponse>("/predict", {
         method: "POST",
-        body: JSON.stringify({ session: sessionForModel }),
+        body: JSON.stringify({ session: currentEvents }),
       })
         .then((response) => {
           lastSentTotalRef.current = totalSamples;
