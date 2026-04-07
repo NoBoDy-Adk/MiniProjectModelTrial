@@ -1,9 +1,10 @@
 import React, { useEffect, useState } from "react";
 import { StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
-import { useRouter } from "expo-router";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import { authenticateWithBiometrics, canUseBiometrics } from "../utils/auth";
 import { apiFetch } from "../utils/api";
 import { clearSession, getSession, saveSession } from "../utils/session";
+import { markContinuousReauthenticated } from "../utils/continuousAuth";
 import type { User } from "../utils/types";
 
 function maskAccountNumber(accountNo: string) {
@@ -23,6 +24,7 @@ interface LoginResponse {
 
 export default function Unlock() {
   const router = useRouter();
+  const { returnTo } = useLocalSearchParams<{ returnTo?: string }>();
   const [user, setUser] = useState<User | null>(null);
   const [pin, setPin] = useState("");
   const [isUnlocking, setIsUnlocking] = useState(false);
@@ -62,7 +64,8 @@ export default function Unlock() {
       return;
     }
 
-    router.replace("/dashboard");
+    await markContinuousReauthenticated();
+    router.replace(returnTo ? String(returnTo) : "/dashboard");
   };
 
   const handleUnlockWithMpin = async () => {
@@ -85,7 +88,8 @@ export default function Unlock() {
         }),
       });
       await saveSession(data.user);
-      router.replace("/dashboard");
+      await markContinuousReauthenticated();
+      router.replace(returnTo ? String(returnTo) : "/dashboard");
     } catch (error) {
       const message =
         error instanceof Error ? error.message : "Unable to unlock with MPIN.";

@@ -2,9 +2,15 @@ import React, { useState } from "react";
 import { Alert, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
 import { useRouter } from "expo-router";
 import { apiFetch } from "../utils/api";
+import { clearContinuousReauthRecord, getContinuousReauthRecord } from "../utils/continuousAuth";
 import { clearPendingTransfer, getPendingTransfer } from "../utils/pendingTransfer";
 import { getSession, saveSession } from "../utils/session";
 import useBehaviorTracker from "../hooks/useBehaviorTracker";
+import {
+  markModelConfidenceChecking,
+  resetModelConfidenceStatus,
+  setModelConfidence as publishModelConfidence,
+} from "../utils/modelConfidenceStore";
 import type { User } from "../utils/types";
 
 interface TransferResponse {
@@ -16,6 +22,17 @@ interface TransferResponse {
     transactions: User["transactions"];
   };
 }
+
+interface ModelConfidence {
+  svm1_score: number;
+  svm2_score: number;
+  lstm_score: number;
+  risk: string;
+}
+
+const SVM_LOW_THRESHOLD = 0.4;
+const LSTM_ANOMALY_THRESHOLD = 0.4;
+const REAUTH_TTL_MS = 2 * 60 * 1000;
 
 export default function TransferMpin() {
   const router = useRouter();
@@ -40,27 +57,54 @@ export default function TransferMpin() {
     try {
       // Check behavioral risk
       if (events.length > 0) {
+        markModelConfidenceChecking();
         const sessionData = events.map(event => ({
           accelX: event.X,
           accelY: event.Y,
           touchPressure: event.Pressure,
           duration: event.Duration,
         }));
-        const riskResponse = await apiFetch<{ svm1_score: number; svm2_score: number; lstm_score: number; risk: string }>("/predict", {
+        const riskResponse = await apiFetch<ModelConfidence>("/predict", {
           method: "POST",
           body: JSON.stringify({ session: sessionData }),
         });
+        publishModelConfidence(riskResponse);
 
-        if (riskResponse.lstm_score < 0.40) {
-          Alert.alert("Security Alert", "High risk detected. Transaction blocked for security.");
-          setIsSubmitting(false);
-          return;
-        } else if (riskResponse.svm1_score < 0.40 && riskResponse.svm2_score < 0.40) {
-          Alert.alert("Security Check", "Unusual activity detected. Please re-enter your MPIN for verification.");
-          setMpin("");
-          setIsSubmitting(false);
-          return;
-        } else if (riskResponse.svm1_score < 0.40) {
+        const isTier2Low =
+          riskResponse.svm1_score < SVM_LOW_THRESHOLD &&
+          riskResponse.svm2_score < SVM_LOW_THRESHOLD;
+
+        if (isTier2Low) {
+          const reauth = await getContinuousReauthRecord();
+          const isRecentlyReauthed =
+            Boolean(reauth?.at) && Date.now() - Number(reauth?.at) <= REAUTH_TTL_MS;
+
+          if (!isRecentlyReauthed) {
+            Alert.alert(
+              "Re-authentication required",
+              "We detected unusual behavior. Please unlock to continue."
+            );
+            setMpin("");
+            setIsSubmitting(false);
+            router.replace({ pathname: "/unlock", params: { returnTo: "/transfer-mpin" } });
+            return;
+          }
+
+          // Tier 3 escalation: evaluate LSTM only after a recent reauth.
+          if (riskResponse.lstm_score < LSTM_ANOMALY_THRESHOLD) {
+            await clearContinuousReauthRecord();
+            Alert.alert(
+              "Security Alert",
+              "High risk detected after re-authentication. Transaction blocked for security."
+            );
+            setIsSubmitting(false);
+            router.replace("/fake-dashboard");
+            return;
+          }
+
+          // Passed Tier 3: clear reauth marker and proceed.
+          await clearContinuousReauthRecord();
+        } else if (riskResponse.svm1_score < SVM_LOW_THRESHOLD) {
           Alert.alert("Notice", "Unusual activity detected. Proceeding with caution.");
           // Continue to transfer
         }
@@ -113,6 +157,7 @@ export default function TransferMpin() {
         error instanceof Error ? error.message : "Transfer could not be completed.";
       setNotice({ type: "error", text: message });
     } finally {
+      resetModelConfidenceStatus();
       setIsSubmitting(false);
     }
   };

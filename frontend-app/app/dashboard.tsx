@@ -37,6 +37,35 @@ const RECIPIENT_TYPES: { key: RecipientType; label: string }[] = [
   { key: "mobile", label: "Mobile" },
 ];
 
+const ACCOUNT_INSIGHTS = [
+  {
+    title: "Spending pattern",
+    body: "Daily transfers, quick swipes, and steady typing rhythm help build a more recognizable interaction pattern.",
+  },
+  {
+    title: "Behavior confidence",
+    body: "More natural touches and scrolls usually create a stronger sample before the security check runs during transfer confirmation.",
+  },
+  {
+    title: "Session freshness",
+    body: "Interacting for a little longer before sensitive actions gives the app a better chance to compare current behavior to the trained profile.",
+  },
+];
+
+const SECURITY_TIPS = [
+  "Scroll through the dashboard naturally before sending money.",
+  "Avoid tapping too quickly through every screen in a perfectly identical way.",
+  "Use the same hand posture and swipe style you normally use on your phone.",
+  "Spend a few extra seconds reviewing recipient details before entering your MPIN.",
+];
+
+const QUICK_ACTIONS = [
+  "Review linked UPI details",
+  "Check last transaction timing",
+  "Inspect recent recipient info",
+  "Confirm account masking and profile values",
+];
+
 function maskAccountNumber(accountNo: string) {
   const cleaned = String(accountNo || "").trim();
   if (!cleaned) {
@@ -300,6 +329,16 @@ export default function Dashboard() {
                   <Text style={styles.metricValue}>{user.transactions.length}</Text>
                 </View>
               </View>
+
+              <View style={styles.detailSection}>
+                <Text style={styles.sectionTitle}>Behavior Insights</Text>
+                {ACCOUNT_INSIGHTS.map((item) => (
+                  <View key={item.title} style={styles.detailCard}>
+                    <Text style={styles.detailCardTitle}>{item.title}</Text>
+                    <Text style={styles.detailCardText}>{item.body}</Text>
+                  </View>
+                ))}
+              </View>
             </View>
           ) : null}
 
@@ -367,6 +406,16 @@ export default function Dashboard() {
                   {isSubmittingTransfer ? "Processing..." : "Send Money"}
                 </Text>
               </TouchableOpacity>
+
+              <View style={styles.detailSection}>
+                <Text style={styles.sectionTitle}>Transfer Readiness</Text>
+                {SECURITY_TIPS.map((tip) => (
+                  <View key={tip} style={styles.tipRow}>
+                    <View style={styles.tipDot} />
+                    <Text style={styles.tipText}>{tip}</Text>
+                  </View>
+                ))}
+              </View>
             </View>
           ) : null}
 
@@ -407,6 +456,16 @@ export default function Dashboard() {
               <TouchableOpacity style={styles.logoutButton} onPress={() => void handleLogout()}>
                 <Text style={styles.logoutButtonText}>Log Out</Text>
               </TouchableOpacity>
+
+              <View style={styles.detailSection}>
+                <Text style={styles.sectionTitle}>Quick Review</Text>
+                {QUICK_ACTIONS.map((item) => (
+                  <View key={item} style={styles.reviewRow}>
+                    <Text style={styles.reviewLabel}>{item}</Text>
+                    <Text style={styles.reviewValue}>Ready</Text>
+                  </View>
+                ))}
+              </View>
             </View>
           ) : null}
         </ScrollView>
@@ -613,6 +672,28 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: "700",
   },
+  detailSection: {
+    marginTop: 18,
+  },
+  detailCard: {
+    backgroundColor: "#020617",
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: "#1e293b",
+    padding: 14,
+    marginTop: 10,
+  },
+  detailCardTitle: {
+    color: "#f8fafc",
+    fontSize: 14,
+    fontWeight: "700",
+    marginBottom: 6,
+  },
+  detailCardText: {
+    color: "#94a3b8",
+    fontSize: 13,
+    lineHeight: 19,
+  },
   recipientTypeRow: {
     flexDirection: "row",
     gap: 8,
@@ -668,6 +749,26 @@ const styles = StyleSheet.create({
   },
   buttonDisabled: {
     opacity: 0.7,
+  },
+  tipRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    marginTop: 10,
+    paddingBottom: 2,
+  },
+  tipDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 999,
+    backgroundColor: "#60a5fa",
+    marginTop: 5,
+    marginRight: 10,
+  },
+  tipText: {
+    flex: 1,
+    color: "#cbd5e1",
+    fontSize: 13,
+    lineHeight: 19,
   },
   transactionItem: {
     backgroundColor: "#020617",
@@ -739,6 +840,29 @@ const styles = StyleSheet.create({
     marginTop: 4,
     marginBottom: 8,
   },
+  reviewRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    backgroundColor: "#020617",
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#1e293b",
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    marginTop: 10,
+  },
+  reviewLabel: {
+    color: "#cbd5e1",
+    fontSize: 13,
+    fontWeight: "600",
+  },
+  reviewValue: {
+    color: "#86efac",
+    fontSize: 12,
+    fontWeight: "700",
+    textTransform: "uppercase",
+  },
   logoutButton: {
     marginTop: 12,
     backgroundColor: "#7f1d1d",
@@ -752,4 +876,3 @@ const styles = StyleSheet.create({
     fontSize: 15,
   },
 });
-

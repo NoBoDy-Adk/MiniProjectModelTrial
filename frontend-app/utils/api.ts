@@ -142,13 +142,14 @@ export async function apiFetch<T>(
 
   for (const baseUrl of candidateBaseUrls) {
     try {
+      const timeoutMs = path.startsWith("/predict") ? 15000 : 3500;
       const response = await fetchWithTimeout(`${baseUrl}${path}`, {
         headers: {
           "Content-Type": "application/json",
           ...(init?.headers || {}),
         },
         ...init,
-      });
+      }, timeoutMs);
 
       lastSuccessfulApiBaseUrl = baseUrl;
 

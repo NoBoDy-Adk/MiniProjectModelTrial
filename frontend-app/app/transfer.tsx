@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useState } from "react";
 import {
   Alert,
   StyleSheet,
@@ -18,13 +18,7 @@ export default function Transfer() {
   const [amount, setAmount] = useState("");
   const [description, setDescription] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const { panResponder, isLongPress } = useBehaviorTracker();
-
-  useEffect(() => {
-    if (isLongPress) {
-      router.replace("/fake-dashboard");
-    }
-  }, [isLongPress, router]);
+  const { panResponder } = useBehaviorTracker();
 
   const handleTransfer = async () => {
     if (!toUpiId || !amount) {

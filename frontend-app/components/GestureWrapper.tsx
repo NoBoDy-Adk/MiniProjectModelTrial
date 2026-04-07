@@ -1,56 +1,70 @@
-import React, { useRef } from "react";
+import React from "react";
 import { View } from "react-native";
-import { useRouter } from "expo-router";
 import { recordTouchSnapshot } from "../hooks/useBehaviorCsvCapture";
+import { recordContinuousTouchSnapshot } from "../utils/continuousModelBuffer";
+
+type TouchNativeEvent = {
+  locationX: number;
+  locationY: number;
+  pageX: number;
+  pageY: number;
+  force?: number;
+};
 
 export default function GestureWrapper({
   children,
 }: {
   children: React.ReactNode;
 }) {
-  const router = useRouter();
-  const longPressTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  const clearLongPressTimeout = () => {
-    if (longPressTimeout.current) {
-      clearTimeout(longPressTimeout.current);
-      longPressTimeout.current = null;
-    }
-  };
-
   return (
     <View
       style={{ flex: 1 }}
       onTouchStart={(evt) => {
-        clearLongPressTimeout();
-        longPressTimeout.current = setTimeout(() => {
-          router.replace("/fake-dashboard");
-        }, 4000);
+        const nativeEvent = evt.nativeEvent as TouchNativeEvent;
         recordTouchSnapshot({
           action: "start",
-          touchX: evt.nativeEvent.locationX,
-          touchY: evt.nativeEvent.locationY,
-          pageX: evt.nativeEvent.pageX,
-          pageY: evt.nativeEvent.pageY,
+          touchX: nativeEvent.locationX,
+          touchY: nativeEvent.locationY,
+          pageX: nativeEvent.pageX,
+          pageY: nativeEvent.pageY,
+        });
+        recordContinuousTouchSnapshot({
+          action: "start",
+          pageX: nativeEvent.pageX,
+          pageY: nativeEvent.pageY,
+          pressure: nativeEvent.force,
         });
       }}
       onTouchMove={(evt) => {
+        const nativeEvent = evt.nativeEvent as TouchNativeEvent;
         recordTouchSnapshot({
           action: "move",
-          touchX: evt.nativeEvent.locationX,
-          touchY: evt.nativeEvent.locationY,
-          pageX: evt.nativeEvent.pageX,
-          pageY: evt.nativeEvent.pageY,
+          touchX: nativeEvent.locationX,
+          touchY: nativeEvent.locationY,
+          pageX: nativeEvent.pageX,
+          pageY: nativeEvent.pageY,
+        });
+        recordContinuousTouchSnapshot({
+          action: "move",
+          pageX: nativeEvent.pageX,
+          pageY: nativeEvent.pageY,
+          pressure: nativeEvent.force,
         });
       }}
       onTouchEnd={(evt) => {
-        clearLongPressTimeout();
+        const nativeEvent = evt.nativeEvent as TouchNativeEvent;
         recordTouchSnapshot({
           action: "end",
-          touchX: evt.nativeEvent.locationX,
-          touchY: evt.nativeEvent.locationY,
-          pageX: evt.nativeEvent.pageX,
-          pageY: evt.nativeEvent.pageY,
+          touchX: nativeEvent.locationX,
+          touchY: nativeEvent.locationY,
+          pageX: nativeEvent.pageX,
+          pageY: nativeEvent.pageY,
+        });
+        recordContinuousTouchSnapshot({
+          action: "end",
+          pageX: nativeEvent.pageX,
+          pageY: nativeEvent.pageY,
+          pressure: nativeEvent.force,
         });
       }}
     >
