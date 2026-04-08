@@ -142,7 +142,11 @@ export async function apiFetch<T>(
 
   for (const baseUrl of candidateBaseUrls) {
     try {
-      const timeoutMs = path.startsWith("/predict") ? 15000 : 3500;
+      const timeoutMs = path.startsWith("/model/bootstrap")
+        ? 10 * 60 * 1000
+        : path.startsWith("/predict")
+          ? 15000
+          : 3500;
       const response = await fetchWithTimeout(`${baseUrl}${path}`, {
         headers: {
           "Content-Type": "application/json",

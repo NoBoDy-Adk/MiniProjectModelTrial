@@ -78,6 +78,10 @@ export default function ModelConfidenceOverlay() {
         <Text style={styles.value}>{formatConfidenceScore(snapshot.svm2_score)}</Text>
       </View>
       <View style={styles.row}>
+        <Text style={styles.label}>LSTM conf</Text>
+        <Text style={styles.value}>{formatConfidenceScore(snapshot.lstm_score)}</Text>
+      </View>
+      <View style={styles.row}>
         <Text style={styles.label}>Overall</Text>
         <Text style={styles.value}>{formatConfidenceScore(overall)}</Text>
       </View>

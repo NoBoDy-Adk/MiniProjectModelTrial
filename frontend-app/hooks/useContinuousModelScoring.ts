@@ -12,6 +12,10 @@ import {
   setModelConfidence,
   setModelConfidenceSampleCount,
 } from "../utils/modelConfidenceStore";
+import {
+  getModelBootstrapState,
+  subscribeToModelBootstrapStore,
+} from "../utils/modelBootstrapStore";
 
 interface ModelConfidenceResponse {
   svm1_score: number;
@@ -20,16 +24,21 @@ interface ModelConfidenceResponse {
   risk: string;
 }
 
-const MIN_SAMPLES = 12;
-const POLL_INTERVAL_MS = 1000;
-const SAMPLE_STEP_TRIGGER = 10;
-const TIME_TRIGGER_MS = 10000;
+const MIN_SAMPLES = 8;
+const POLL_INTERVAL_MS = 500;
+const SAMPLE_STEP_TRIGGER = 4;
+const TIME_TRIGGER_MS = 2500;
 
 export default function useContinuousModelScoring() {
   const events = useSyncExternalStore(
     subscribeToContinuousModelBuffer,
     getContinuousModelEvents,
     getContinuousModelEvents
+  );
+  const bootstrapState = useSyncExternalStore(
+    subscribeToModelBootstrapStore,
+    getModelBootstrapState,
+    getModelBootstrapState
   );
   const requestInFlightRef = useRef(false);
   const eventsRef = useRef(events);
@@ -62,9 +71,19 @@ export default function useContinuousModelScoring() {
 
       if (
         requestInFlightRef.current ||
+        bootstrapState.phase !== "ready" ||
         currentEvents.length < MIN_SAMPLES ||
         !shouldSend
       ) {
+        if (__DEV__ && bootstrapState.phase !== "ready") {
+          console.log(
+            "[predict] waiting for model bootstrap",
+            JSON.stringify({
+              phase: bootstrapState.phase,
+              detail: bootstrapState.message,
+            })
+          );
+        }
         return;
       }
 
@@ -116,5 +135,5 @@ export default function useContinuousModelScoring() {
     return () => {
       clearInterval(intervalId);
     };
-  }, []);
+  }, [bootstrapState.message, bootstrapState.phase]);
 }

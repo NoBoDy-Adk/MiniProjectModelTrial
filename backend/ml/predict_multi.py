@@ -22,14 +22,33 @@ lstm_model.eval()
 feature_cols = ["X", "Y", "Pressure", "Duration", "Orientation", "Size"]
 
 
-def pad_sequence(df):
-    arr = df[feature_cols].values
+def pad_sequence(arr):
     if len(arr) >= 50:
         seq = arr[:50]
     else:
         padding = np.zeros((50 - len(arr), len(feature_cols)))
         seq = np.vstack([arr, padding])
     return seq
+
+
+def normalize_session(df):
+    frame = df.copy()
+    for column in feature_cols:
+        if column not in frame:
+            frame[column] = 0.0
+
+    frame = frame[feature_cols].apply(pd.to_numeric, errors="coerce").fillna(0.0)
+
+    for column in feature_cols:
+        values = frame[column].to_numpy(dtype=np.float32)
+        min_value = float(np.min(values))
+        max_value = float(np.max(values))
+        if max_value - min_value > 1e-6:
+            frame[column] = (values - min_value) / (max_value - min_value)
+        else:
+            frame[column] = np.full_like(values, 0.5, dtype=np.float32)
+
+    return frame.to_numpy(dtype=np.float32)
 
 
 def extract_stat_features(seq):
@@ -41,7 +60,8 @@ def extract_stat_features(seq):
 
 
 df = pd.read_csv(TEMP_INPUT_PATH)
-test_seq = pad_sequence(df)
+normalized = normalize_session(df)
+test_seq = pad_sequence(normalized)
 
 test_seq_flat = test_seq.flatten()
 svm1_score = clf_seq.predict_proba([test_seq_flat])[0][1]

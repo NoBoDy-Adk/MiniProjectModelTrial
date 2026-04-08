@@ -23,7 +23,7 @@ const initialSnapshot: ModelConfidenceSnapshot = {
 let snapshot: ModelConfidenceSnapshot = initialSnapshot;
 
 const listeners = new Set<() => void>();
-const EMA_ALPHA = 0.3;
+const EMA_ALPHA = 0.5;
 const MIN_RELIABLE_SAMPLES = 40;
 
 function clamp01(value: number, fallback = 0.5) {

@@ -3,6 +3,7 @@ import { apiFetch, getCurrentApiBaseUrl } from "../utils/api";
 import {
   getContinuousModelEvents,
   getContinuousModelTotalSamples,
+  initializeContinuousModelBuffer,
   subscribeToContinuousModelBuffer,
 } from "../utils/continuousModelBuffer";
 
@@ -12,10 +13,10 @@ interface RecordSessionResponse {
   inputPath: string;
 }
 
-const MIN_SAMPLES = 12;
+const MIN_SAMPLES = 3;
 const POLL_INTERVAL_MS = 1000;
-const SAMPLE_STEP_TRIGGER = 10;
-const TIME_TRIGGER_MS = 5000;
+const SAMPLE_STEP_TRIGGER = 3;
+const TIME_TRIGGER_MS = 2000;
 
 export default function useContinuousTempInputSync() {
   const events = useSyncExternalStore(
@@ -31,6 +32,10 @@ export default function useContinuousTempInputSync() {
   useEffect(() => {
     eventsRef.current = events;
   }, [events]);
+
+  useEffect(() => {
+    void initializeContinuousModelBuffer();
+  }, []);
 
   useEffect(() => {
     const intervalId = setInterval(() => {
