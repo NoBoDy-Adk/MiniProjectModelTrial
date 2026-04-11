@@ -10,6 +10,7 @@ let events: ContinuousModelEvent[] = [];
 let gestureStartTimestamp: number | null = null;
 let totalSamples = 0;
 let initializedFromCsv = false;
+const MAX_WINDOW_SAMPLES = 120;
 
 function parseCsvLine(line: string) {
   const result: string[] = [];
@@ -133,7 +134,7 @@ export async function initializeContinuousModelBuffer() {
       return;
     }
 
-    events = restored;
+    events = restored.slice(-MAX_WINDOW_SAMPLES);
     totalSamples = restored.length;
     emitChange();
   } catch {
@@ -183,7 +184,7 @@ export function recordContinuousTouchSnapshot(payload: {
       touchPressure: payload.pressure ?? 0.5,
       duration,
     },
-  ];
+  ].slice(-MAX_WINDOW_SAMPLES);
   totalSamples += 1;
 
   if (payload.action === "end") {

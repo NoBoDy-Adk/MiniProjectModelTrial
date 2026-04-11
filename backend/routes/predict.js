@@ -1,12 +1,19 @@
 const express = require("express");
 const path = require("path");
+const fs = require("fs");
 const { spawn } = require("child_process");
 const { writeTempInputCsv } = require("../utils/tempInputCsv");
+const { resolveModelScope } = require("../utils/modelScope");
 
 const router = express.Router();
 
 router.post("/", async (req, res) => {
-  const { normalizedSession, rowCount, inputPath } = writeTempInputCsv(req.body.session);
+  const accountNo = req.body?.accountNo || req.headers["x-account-no"];
+  const scope = resolveModelScope(accountNo);
+  const { normalizedSession, rowCount, inputPath, scopeId } = writeTempInputCsv(
+    req.body.session,
+    { accountNo }
+  );
 
   if (!normalizedSession.length) {
     console.warn("[predict] skipped prediction: empty session");
@@ -14,12 +21,34 @@ router.post("/", async (req, res) => {
   }
 
   console.log(
-    `[predict] received ${rowCount} rows and updated temp_input.csv at ${inputPath}`
+    `[predict] scope=${scopeId} received ${rowCount} rows and updated temp_input.csv at ${inputPath}`
   );
 
-  const py = spawn("python", ["ml/predict_tiered.py"], {
-    cwd: path.join(__dirname, ".."),
-  });
+  const defaultSvmSeqPath = path.join(__dirname, "..", "svm_tier_1_sequence.pkl");
+  const defaultSvmStatPath = path.join(__dirname, "..", "svm_tier_2_statistical.pkl");
+  const defaultLstmPath = path.join(__dirname, "..", "ml", "lstm_classifier.pt");
+
+  const svmSeqPath = fs.existsSync(scope.svmSeqPath) ? scope.svmSeqPath : defaultSvmSeqPath;
+  const svmStatPath = fs.existsSync(scope.svmStatPath) ? scope.svmStatPath : defaultSvmStatPath;
+  const lstmPath = fs.existsSync(scope.lstmPath) ? scope.lstmPath : defaultLstmPath;
+
+  const py = spawn(
+    "python",
+    [
+      "ml/predict_tiered.py",
+      "--temp-input",
+      inputPath,
+      "--svm-seq",
+      svmSeqPath,
+      "--svm-stat",
+      svmStatPath,
+      "--lstm",
+      lstmPath,
+    ],
+    {
+      cwd: path.join(__dirname, ".."),
+    }
+  );
 
   let output = "";
   let errorOutput = "";
@@ -79,10 +108,10 @@ router.post("/", async (req, res) => {
     }
 
     console.log(
-      `[predict] scores svm1=${svm1_score.toFixed(4)} svm2=${svm2_score.toFixed(4)} lstm=${lstm_score.toFixed(4)} fused=${fused_score.toFixed(4)} risk=${risk}`
+      `[predict] scope=${scopeId} scores svm1=${svm1_score.toFixed(4)} svm2=${svm2_score.toFixed(4)} lstm=${lstm_score.toFixed(4)} fused=${fused_score.toFixed(4)} risk=${risk}`
     );
 
-    return res.json({ svm1_score, svm2_score, lstm_score, fused_score, risk });
+    return res.json({ svm1_score, svm2_score, lstm_score, fused_score, risk, scope: scopeId });
   });
 });
 

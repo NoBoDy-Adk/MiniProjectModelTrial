@@ -1,3 +1,4 @@
+import argparse
 import joblib
 import numpy as np
 import pandas as pd
@@ -8,19 +9,31 @@ from feature_pipeline import extract_stat_features, normalize_session
 from lstm_model import LSTMClassifier
 
 ROOT_DIR = Path(__file__).resolve().parent
-SVM_SEQ_PATH = ROOT_DIR.parent / "svm_tier_1_sequence.pkl"
-SVM_STAT_PATH = ROOT_DIR.parent / "svm_tier_2_statistical.pkl"
-LSTM_PATH = ROOT_DIR / "lstm_classifier.pt"
-TEMP_INPUT_PATH = ROOT_DIR / "temp_input.csv"
+DEFAULT_SVM_SEQ_PATH = ROOT_DIR.parent / "svm_tier_1_sequence.pkl"
+DEFAULT_SVM_STAT_PATH = ROOT_DIR.parent / "svm_tier_2_statistical.pkl"
+DEFAULT_LSTM_PATH = ROOT_DIR / "lstm_classifier.pt"
+DEFAULT_TEMP_INPUT_PATH = ROOT_DIR / "temp_input.csv"
 
-clf_seq = joblib.load(SVM_SEQ_PATH)
-clf_stat = joblib.load(SVM_STAT_PATH)
+parser = argparse.ArgumentParser()
+parser.add_argument("--temp-input", default=str(DEFAULT_TEMP_INPUT_PATH))
+parser.add_argument("--svm-seq", default=str(DEFAULT_SVM_SEQ_PATH))
+parser.add_argument("--svm-stat", default=str(DEFAULT_SVM_STAT_PATH))
+parser.add_argument("--lstm", default=str(DEFAULT_LSTM_PATH))
+args = parser.parse_args()
+
+temp_input_path = Path(args.temp_input)
+svm_seq_path = Path(args.svm_seq)
+svm_stat_path = Path(args.svm_stat)
+lstm_path = Path(args.lstm)
+
+clf_seq = joblib.load(svm_seq_path)
+clf_stat = joblib.load(svm_stat_path)
 
 lstm_model = LSTMClassifier()
-lstm_model.load_state_dict(torch.load(LSTM_PATH, map_location=torch.device("cpu")))
+lstm_model.load_state_dict(torch.load(lstm_path, map_location=torch.device("cpu")))
 lstm_model.eval()
 
-df = pd.read_csv(TEMP_INPUT_PATH)
+df = pd.read_csv(temp_input_path)
 test_seq = normalize_session(df)
 
 test_seq_flat = test_seq.flatten()

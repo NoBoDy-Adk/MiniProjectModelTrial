@@ -1,24 +1,75 @@
 const fs = require("fs");
 const path = require("path");
+const { resolveModelScope } = require("./modelScope");
 
-const TEMP_INPUT_PATH = path.join(__dirname, "../ml/temp_input.csv");
+const TEMP_INPUT_PATH = path.join(__dirname, "../ml/user_profiles/shared/temp_input.csv");
 const HEADER = "X,Y,Pressure,Duration,Orientation,Size\n";
+const MAX_HISTORY_ROWS = 5000;
 
-function ensureTempInputCsvExists() {
-  const directory = path.dirname(TEMP_INPUT_PATH);
+function resolveTempInputPath(options = {}) {
+  const scope = resolveModelScope(options.accountNo);
+  return { scope, tempInputPath: scope.tempInputPath };
+}
+
+function ensureTempInputCsvExists(options = {}) {
+  const { tempInputPath } = resolveTempInputPath(options);
+  const directory = path.dirname(tempInputPath);
   if (!fs.existsSync(directory)) {
     fs.mkdirSync(directory, { recursive: true });
   }
 
-  if (!fs.existsSync(TEMP_INPUT_PATH)) {
-    fs.writeFileSync(TEMP_INPUT_PATH, HEADER, "utf8");
+  if (!fs.existsSync(tempInputPath)) {
+    fs.writeFileSync(tempInputPath, HEADER, "utf8");
+    return tempInputPath;
+  }
+
+  const content = fs.readFileSync(tempInputPath, "utf8");
+  if (!content.startsWith(HEADER)) {
+    fs.writeFileSync(tempInputPath, `${HEADER}${content}`, "utf8");
+  }
+
+  return tempInputPath;
+}
+
+function ensureCsvWithHeader(csvPath) {
+  const directory = path.dirname(csvPath);
+  if (!fs.existsSync(directory)) {
+    fs.mkdirSync(directory, { recursive: true });
+  }
+
+  if (!fs.existsSync(csvPath)) {
+    fs.writeFileSync(csvPath, HEADER, "utf8");
     return;
   }
 
-  const content = fs.readFileSync(TEMP_INPUT_PATH, "utf8");
+  const content = fs.readFileSync(csvPath, "utf8");
   if (!content.startsWith(HEADER)) {
-    fs.writeFileSync(TEMP_INPUT_PATH, `${HEADER}${content}`, "utf8");
+    fs.writeFileSync(csvPath, `${HEADER}${content}`, "utf8");
   }
+}
+
+function appendRowsToHistoryCsv(historyPath, rows) {
+  if (!rows.length) {
+    return;
+  }
+
+  ensureCsvWithHeader(historyPath);
+
+  const existing = fs.readFileSync(historyPath, "utf8");
+  const normalized = existing.replace(/\r\n/g, "\n");
+  const existingRows = normalized
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0)
+    .slice(1);
+
+  const mergedRows = [...existingRows, ...rows];
+  const trimmedRows =
+    mergedRows.length > MAX_HISTORY_ROWS
+      ? mergedRows.slice(mergedRows.length - MAX_HISTORY_ROWS)
+      : mergedRows;
+
+  fs.writeFileSync(historyPath, HEADER + trimmedRows.join("\n") + "\n", "utf8");
 }
 
 function clamp01(value, fallback = 0.5) {
@@ -168,12 +219,18 @@ function normalizeSession(session) {
   });
 }
 
-function writeTempInputCsv(session) {
-  ensureTempInputCsvExists();
+function writeTempInputCsv(session, options = {}) {
+  const { scope, tempInputPath } = resolveTempInputPath(options);
+  ensureTempInputCsvExists(options);
 
   const normalizedSession = normalizeSession(session);
   if (!normalizedSession.length) {
-    return { normalizedSession, rowCount: 0, inputPath: TEMP_INPUT_PATH };
+    return {
+      normalizedSession,
+      rowCount: 0,
+      inputPath: tempInputPath,
+      scopeId: scope.scopeId,
+    };
   }
 
   const rows = normalizedSession.map(
@@ -181,18 +238,22 @@ function writeTempInputCsv(session) {
       `${row.X},${row.Y},${row.Pressure},${row.Duration},${row.Orientation},${row.Size}`
   );
 
-  fs.writeFileSync(TEMP_INPUT_PATH, HEADER + rows.join("\n"), "utf8");
+  fs.writeFileSync(tempInputPath, HEADER + rows.join("\n"), "utf8");
+  appendRowsToHistoryCsv(scope.historyPath, rows);
 
   return {
     normalizedSession,
     rowCount: normalizedSession.length,
-    inputPath: TEMP_INPUT_PATH,
+    inputPath: tempInputPath,
+    historyPath: scope.historyPath,
+    scopeId: scope.scopeId,
   };
 }
 
 module.exports = {
   TEMP_INPUT_PATH,
   ensureTempInputCsvExists,
+  resolveTempInputPath,
   normalizeSession,
   writeTempInputCsv,
 };

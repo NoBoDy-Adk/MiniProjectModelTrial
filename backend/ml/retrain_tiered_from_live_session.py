@@ -1,3 +1,4 @@
+import argparse
 import random
 from pathlib import Path
 
@@ -28,11 +29,13 @@ EPOCHS = 16
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 ROOT_DIR = Path(__file__).resolve().parent
-INPUT_PATH = ROOT_DIR / "temp_input.csv"
-REFERENCE_PATH = ROOT_DIR / "reference_session.csv"
-SVM_SEQ_PATH = ROOT_DIR.parent / "svm_tier_1_sequence.pkl"
-SVM_STAT_PATH = ROOT_DIR.parent / "svm_tier_2_statistical.pkl"
-LSTM_PATH = ROOT_DIR / "lstm_classifier.pt"
+DEFAULT_INPUT_PATH = ROOT_DIR / "temp_input.csv"
+DEFAULT_HISTORY_PATH = ROOT_DIR / "history_input.csv"
+DEFAULT_REFERENCE_PATH = ROOT_DIR / "reference_session.csv"
+DEFAULT_SVM_SEQ_PATH = ROOT_DIR.parent / "svm_tier_1_sequence.pkl"
+DEFAULT_SVM_STAT_PATH = ROOT_DIR.parent / "svm_tier_2_statistical.pkl"
+DEFAULT_LSTM_PATH = ROOT_DIR / "lstm_classifier.pt"
+DEFAULT_PROFILES_ROOT = ROOT_DIR / "user_profiles"
 
 
 def set_seed(seed: int = 42):
@@ -126,7 +129,7 @@ class SequenceDataset(Dataset):
         return self.features[index], self.labels[index]
 
 
-def train_lstm_model(x_train, y_train):
+def train_lstm_model(x_train, y_train, lstm_output_path: Path):
     dataset = SequenceDataset(x_train, y_train)
     loader = DataLoader(dataset, batch_size=BATCH_SIZE, shuffle=True)
 
@@ -154,25 +157,112 @@ def train_lstm_model(x_train, y_train):
             f"Loss: {epoch_loss / max(len(loader), 1):.4f}"
         )
 
-    torch.save(model.state_dict(), LSTM_PATH)
+    torch.save(model.state_dict(), lstm_output_path)
+
+
+def load_hard_negative_sequences(profiles_root: Path, scope_id: str):
+    negatives = []
+    if not profiles_root.exists():
+        return negatives
+
+    for profile_dir in profiles_root.iterdir():
+        if not profile_dir.is_dir() or profile_dir.name == scope_id:
+            continue
+        reference_path = profile_dir / "reference_session.csv"
+        if not reference_path.exists():
+            continue
+        try:
+            df = pd.read_csv(reference_path)
+            seq = normalize_session(df)
+            negatives.append(seq.astype(np.float32))
+        except Exception:
+            continue
+
+    return negatives
+
+
+def extract_sessions_from_history(raw_df: pd.DataFrame):
+    if raw_df.empty:
+        return []
+
+    sessions = []
+    stride = max(10, SEQUENCE_LENGTH // 2)
+    values = raw_df.copy()
+    total_rows = len(values)
+    if total_rows < 10:
+        return sessions
+
+    if total_rows <= SEQUENCE_LENGTH:
+        sessions.append(normalize_session(values))
+        return sessions
+
+    for start in range(0, total_rows - 9, stride):
+        end = min(total_rows, start + SEQUENCE_LENGTH)
+        window = values.iloc[start:end]
+        sessions.append(normalize_session(window))
+
+    return sessions[-12:]
 
 
 def main():
     set_seed()
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--input", default=str(DEFAULT_INPUT_PATH))
+    parser.add_argument("--history", default=str(DEFAULT_HISTORY_PATH))
+    parser.add_argument("--reference", default=str(DEFAULT_REFERENCE_PATH))
+    parser.add_argument("--svm-seq", default=str(DEFAULT_SVM_SEQ_PATH))
+    parser.add_argument("--svm-stat", default=str(DEFAULT_SVM_STAT_PATH))
+    parser.add_argument("--lstm", default=str(DEFAULT_LSTM_PATH))
+    parser.add_argument("--profiles-root", default=str(DEFAULT_PROFILES_ROOT))
+    parser.add_argument("--scope-id", default="shared")
+    args = parser.parse_args()
 
-    if not INPUT_PATH.exists():
-        raise FileNotFoundError(f"Missing input session file: {INPUT_PATH}")
+    input_path = Path(args.input)
+    history_path = Path(args.history)
+    reference_path = Path(args.reference)
+    svm_seq_path = Path(args.svm_seq)
+    svm_stat_path = Path(args.svm_stat)
+    lstm_path = Path(args.lstm)
+    profiles_root = Path(args.profiles_root)
+    scope_id = str(args.scope_id or "shared").strip() or "shared"
 
-    raw_df = pd.read_csv(INPUT_PATH)
+    reference_path.parent.mkdir(parents=True, exist_ok=True)
+    svm_seq_path.parent.mkdir(parents=True, exist_ok=True)
+    svm_stat_path.parent.mkdir(parents=True, exist_ok=True)
+    lstm_path.parent.mkdir(parents=True, exist_ok=True)
+
+    source_path = history_path if history_path.exists() else input_path
+    if not source_path.exists():
+        raise FileNotFoundError(f"Missing input session file: {source_path}")
+
+    raw_df = pd.read_csv(source_path)
     if len(raw_df) < 10:
-        raise ValueError("Need at least 10 live samples in temp_input.csv to retrain.")
+        raise ValueError("Need at least 10 live samples in temp/history csv to retrain.")
 
-    reference = normalize_session(raw_df)
+    historical_sessions = extract_sessions_from_history(raw_df)
+    if not historical_sessions:
+        raise ValueError("Could not extract enough historical sessions for retraining.")
+
+    reference = historical_sessions[-1]
     reference_df = pd.DataFrame(reference, columns=FEATURE_COLS)
-    reference_df.to_csv(REFERENCE_PATH, index=False)
+    reference_df.to_csv(reference_path, index=False)
 
-    positive_sequences = [augment_positive(reference) for _ in range(320)]
-    negative_sequences = [generate_negative(reference) for _ in range(320)]
+    positive_sequences = []
+    for session in historical_sessions:
+        positive_sequences.append(session.astype(np.float32))
+        positive_sequences.extend([augment_positive(session) for _ in range(24)])
+    positive_sequences.extend([augment_positive(reference) for _ in range(120)])
+    synthetic_negatives = [generate_negative(reference) for _ in range(220)]
+    hard_negatives = load_hard_negative_sequences(profiles_root, scope_id)
+    sampled_hard_negatives = (
+        random.sample(hard_negatives, min(len(hard_negatives), 220))
+        if hard_negatives
+        else []
+    )
+    negative_sequences = synthetic_negatives + sampled_hard_negatives
+    if len(negative_sequences) < 220:
+        needed = 220 - len(negative_sequences)
+        negative_sequences.extend([generate_negative(reference) for _ in range(needed)])
 
     x_sequences = np.array(positive_sequences + negative_sequences, dtype=np.float32)
     y = np.array([1] * len(positive_sequences) + [0] * len(negative_sequences))
@@ -230,10 +320,10 @@ def main():
     print(f"SVM Seq Accuracy: {seq_accuracy:.4f}")
     print(f"SVM Stat Accuracy: {stat_accuracy:.4f}")
 
-    train_lstm_model(x_lstm_train, y_lstm_train)
+    train_lstm_model(x_lstm_train, y_lstm_train, lstm_path)
 
     lstm_eval_model = LSTMClassifier().to(DEVICE)
-    lstm_eval_model.load_state_dict(torch.load(LSTM_PATH, map_location=DEVICE))
+    lstm_eval_model.load_state_dict(torch.load(lstm_path, map_location=DEVICE))
     lstm_eval_model.eval()
 
     with torch.no_grad():
@@ -243,13 +333,14 @@ def main():
 
     print(f"LSTM Accuracy: {lstm_accuracy:.4f}")
 
-    joblib.dump(clf_seq, SVM_SEQ_PATH)
-    joblib.dump(clf_stat, SVM_STAT_PATH)
+    joblib.dump(clf_seq, svm_seq_path)
+    joblib.dump(clf_stat, svm_stat_path)
 
-    print(f"Saved reference to {REFERENCE_PATH}")
-    print(f"Saved SVM seq model to {SVM_SEQ_PATH}")
-    print(f"Saved SVM stat model to {SVM_STAT_PATH}")
-    print(f"Saved LSTM model to {LSTM_PATH}")
+    print(f"Hard negatives used: {len(sampled_hard_negatives)}")
+    print(f"Saved reference to {reference_path}")
+    print(f"Saved SVM seq model to {svm_seq_path}")
+    print(f"Saved SVM stat model to {svm_stat_path}")
+    print(f"Saved LSTM model to {lstm_path}")
 
 
 if __name__ == "__main__":

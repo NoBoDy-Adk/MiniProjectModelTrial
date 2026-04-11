@@ -5,8 +5,11 @@ const router = express.Router();
 
 router.post("/behavior", async (req, res) => {
   try {
-    const { rowCount, inputPath } = writeTempInputCsv(req.body.session);
-    ensureTempInputCsvExists();
+    const accountNo = req.body?.accountNo || req.headers["x-account-no"];
+    const { rowCount, inputPath, scopeId } = writeTempInputCsv(req.body.session, {
+      accountNo,
+    });
+    ensureTempInputCsvExists({ accountNo });
 
     if (!rowCount) {
       console.warn("[record-session] session received with no rows; header file ensured");
@@ -14,6 +17,7 @@ router.post("/behavior", async (req, res) => {
         message: "No session rows received. temp_input.csv header is ready.",
         rowCount: 0,
         inputPath,
+        scopeId,
       });
     }
 
@@ -25,6 +29,7 @@ router.post("/behavior", async (req, res) => {
       message: "Behavior data saved successfully.",
       rowCount,
       inputPath,
+      scopeId,
     });
   } catch (error) {
     console.error("[record-session] failed to update temp_input.csv", error);

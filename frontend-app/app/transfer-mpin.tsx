@@ -4,9 +4,10 @@ import { useRouter } from "expo-router";
 import { apiFetch } from "../utils/api";
 import { clearContinuousReauthRecord, getContinuousReauthRecord } from "../utils/continuousAuth";
 import { clearPendingTransfer, getPendingTransfer } from "../utils/pendingTransfer";
-import { getSession, saveSession } from "../utils/session";
+import { clearSession, getSession, saveSession } from "../utils/session";
 import useBehaviorTracker from "../hooks/useBehaviorTracker";
 import {
+  getModelConfidenceSnapshot,
   markModelConfidenceChecking,
   resetModelConfidenceStatus,
   setModelConfidence as publishModelConfidence,
@@ -27,11 +28,10 @@ interface ModelConfidence {
   svm1_score: number;
   svm2_score: number;
   lstm_score: number;
+  fused_score?: number;
   risk: string;
 }
 
-const SVM_LOW_THRESHOLD = 0.4;
-const LSTM_ANOMALY_THRESHOLD = 0.4;
 const REAUTH_TTL_MS = 2 * 60 * 1000;
 
 export default function TransferMpin() {
@@ -44,6 +44,18 @@ export default function TransferMpin() {
   } | null>(null);
   const { panResponder, events } = useBehaviorTracker();
 
+  const isHighRiskLabel = (value: string | null | undefined) =>
+    String(value || "").toLowerCase().trim() === "high";
+
+  const performSilentLogout = async () => {
+    await Promise.allSettled([
+      clearContinuousReauthRecord(),
+      clearPendingTransfer(),
+      clearSession(),
+    ]);
+    router.replace("/login");
+  };
+
   const handleSubmit = async () => {
     setNotice(null);
 
@@ -55,7 +67,14 @@ export default function TransferMpin() {
     setIsSubmitting(true);
 
     try {
-      // Check behavioral risk
+      // Hard guard: if live continuous scoring already says high, logout immediately.
+      const lastRisk = getModelConfidenceSnapshot().risk;
+      if (isHighRiskLabel(lastRisk)) {
+        await performSilentLogout();
+        return;
+      }
+
+      // Check behavioral risk using current interaction events.
       if (events.length > 0) {
         markModelConfidenceChecking();
         const sessionData = events.map(event => ({
@@ -70,16 +89,22 @@ export default function TransferMpin() {
         });
         publishModelConfidence(riskResponse);
 
-        const isSvmTierLow =
-          riskResponse.svm1_score < SVM_LOW_THRESHOLD &&
-          riskResponse.svm2_score < SVM_LOW_THRESHOLD;
-        const isTier2Low =
-          isSvmTierLow &&
-          (riskResponse.lstm_score < 0.45 ||
-            riskResponse.risk === "high" ||
-            riskResponse.risk === "medium");
+        const normalizedRisk = String(riskResponse.risk || "").toLowerCase().trim();
+        const fused = Number(riskResponse.fused_score);
+        const hasFused = Number.isFinite(fused);
+        const highByScore =
+          (hasFused && fused < 0.3) ||
+          (hasFused && riskResponse.lstm_score < 0.25 && fused < 0.35);
+        const isHighRisk = isHighRiskLabel(normalizedRisk) || highByScore;
+        const isMediumRisk =
+          normalizedRisk === "medium-high" || normalizedRisk === "low-medium";
 
-        if (isTier2Low) {
+        if (isHighRisk) {
+          await performSilentLogout();
+          return;
+        }
+
+        if (isMediumRisk) {
           const reauth = await getContinuousReauthRecord();
           const isRecentlyReauthed =
             Boolean(reauth?.at) && Date.now() - Number(reauth?.at) <= REAUTH_TTL_MS;
@@ -94,29 +119,9 @@ export default function TransferMpin() {
             router.replace({ pathname: "/unlock", params: { returnTo: "/transfer-mpin" } });
             return;
           }
-
-          // Tier 3 escalation: evaluate LSTM only after a recent reauth.
-          if (riskResponse.lstm_score < LSTM_ANOMALY_THRESHOLD) {
-            await clearContinuousReauthRecord();
-            Alert.alert(
-              "Security Alert",
-              "High risk detected after re-authentication. Transaction blocked for security."
-            );
-            setIsSubmitting(false);
-            router.replace("/fake-dashboard");
-            return;
-          }
-
-          // Passed Tier 3: clear reauth marker and proceed.
           await clearContinuousReauthRecord();
-        } else if (
-          riskResponse.svm1_score < SVM_LOW_THRESHOLD &&
-          riskResponse.lstm_score < 0.5
-        ) {
-          Alert.alert("Notice", "Unusual activity detected. Proceeding with caution.");
-          // Continue to transfer
         }
-        // Else proceed normally
+        // low risk proceeds normally
       }
 
       const session = await getSession();
